@@ -1,6 +1,6 @@
-# wr-analysis-web
+# wr-analysis
 
-> Web layer for [wr-analysis-light](../wr-analysis-light) — a modular data pipeline for **Web Reputational Analysis**.
+> Web layer for [wr-analysis-light](https://github.com/DavMos9/wr-analysis-light) — a modular data pipeline for **Web Reputational Analysis**.
 
 This project wraps the core Python pipeline in a set of RESTful microservices and exposes three interfaces:
 
@@ -72,7 +72,7 @@ This project wraps the core Python pipeline in a set of RESTful microservices an
 |---|---|
 | [Docker](https://docs.docker.com/get-docker/) | ≥ 24 |
 | [Docker Compose](https://docs.docker.com/compose/) | ≥ 2.0 |
-| [wr-analysis-light](../wr-analysis-light) | at `../wr-analysis-light` |
+| [wr-analysis-light](https://github.com/DavMos9/wr-analysis-light) | at `../wr-analysis-light` |
 | PostgreSQL *(for dashboard)* | ≥ 14, external — see [Dashboard setup](#dashboard-postgresql-setup) |
 
 The `wr-analysis-light` repository must be cloned as a **sibling directory** — the pipeline-service mounts it as a read-only bind-mount:
@@ -80,7 +80,7 @@ The `wr-analysis-light` repository must be cloned as a **sibling directory** —
 ```
 parent/
 ├── wr-analysis-light/    ← core pipeline (required)
-└── wr-analysis-web/      ← this repo
+└── wr-analysis/          ← this repo
 ```
 
 ---
@@ -89,8 +89,8 @@ parent/
 
 ```bash
 # 1. Clone this repository alongside wr-analysis-light
-git clone <repo-url> wr-analysis-web
-cd wr-analysis-web
+git clone https://github.com/DavMos9/wr-analysis.git
+cd wr-analysis
 
 # 2. Configure environment
 cp .env.example .env
@@ -331,7 +331,7 @@ Permanently remove a schedule.
 ## Project Structure
 
 ```
-wr-analysis-web/
+wr-analysis/
 ├── docker-compose.yml          # All services + shared pipeline_data volume
 ├── nginx.conf                  # Reverse proxy config
 ├── .env.example                # Template — copy to .env and fill in keys
@@ -462,4 +462,4 @@ The core pipeline (`wr-analysis-light`) is mounted as a **read-only bind-mount**
 
 ## License
 
-Same license as [wr-analysis-light](../wr-analysis-light).
+MIT — see [LICENSE](LICENSE). Same license as [wr-analysis-light](https://github.com/DavMos9/wr-analysis-light).

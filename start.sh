@@ -1,5 +1,5 @@
 #!/usr/bin/env zsh
-# start.sh — Avvia tutti i servizi di wr-analysis-web in background.
+# start.sh — Avvia tutti i servizi di wr-analysis in background.
 # Uso: ./start.sh
 # Log: logs/  |  PID: .pids
 
@@ -45,7 +45,7 @@ export DATA_DIR
 export PYTHONPATH="$CORE_DIR"
 export PIPELINE_SERVICE_URL="http://localhost:8001"
 
-echo "🚀 Avvio wr-analysis-web..."
+echo "🚀 Avvio wr-analysis..."
 
 # ── Pipeline Service :8001 ────────────────────────────────────────────────────
 python3 -m uvicorn main:app --port 8001 \

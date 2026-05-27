@@ -9,7 +9,7 @@ if [[ ! -f "$PIDS_FILE" ]]; then
   exit 0
 fi
 
-echo "🛑 Arresto servizi wr-analysis-web..."
+echo "🛑 Arresto servizi wr-analysis..."
 
 while IFS= read -r pid; do
   if kill -0 "$pid" 2>/dev/null; then

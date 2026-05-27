@@ -70,7 +70,7 @@ export default function App() {
 
       {/* ── Footer ── */}
       <footer className="mt-10 pb-6 text-center text-xs text-gray-300">
-        wr-analysis-web · microservices edition
+        wr-analysis · microservices edition
       </footer>
     </div>
   )
