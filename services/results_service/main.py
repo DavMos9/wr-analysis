@@ -52,16 +52,25 @@ def _load_json(path: Path) -> list | dict:
         raise HTTPException(status_code=500, detail=f"Errore lettura file: {e}")
 
 
-def _safe_filename(filename: str) -> str:
-    """Rifiuta filename che contengono path separators o componenti di traversal."""
+def _safe_path(filename: str, suffix: str) -> Path:
+    """
+    Costruisce e valida un path all'interno di FINAL_DIR.
+
+    Doppia protezione contro path traversal:
+    1. Rifiuta immediatamente separatori e '..' nel nome file raw.
+    2. Risolve il path finale e verifica che sia sotto FINAL_DIR anche
+       in presenza di symlink o encoding insoliti (CWE-22).
+    """
     if "/" in filename or "\\" in filename or ".." in filename:
         raise HTTPException(status_code=400, detail="Nome file non valido.")
-    return filename
-
-
-def _require_file(path: Path) -> None:
+    path = (FINAL_DIR / f"{filename}{suffix}").resolve()
+    try:
+        path.relative_to(FINAL_DIR.resolve())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Nome file non valido.")
     if not path.exists():
-        raise HTTPException(status_code=404, detail=f"File non trovato: {path.name}")
+        raise HTTPException(status_code=404, detail=f"File non trovato: {Path(filename).name}{suffix}")
+    return path
 
 
 def _iter_result_files() -> list[Path]:
@@ -120,42 +129,34 @@ def get_result_records(filename: str) -> list:
     Ritorna i record completi per un dato (target, topic).
     `filename` è il nome del file senza estensione.
     """
-    filename = _safe_filename(filename)
-    path = FINAL_DIR / f"{filename}.json"
-    _require_file(path)
+    path = _safe_path(filename, ".json")
     return _load_json(path)
 
 
 @app.get("/results/{filename}/summary", tags=["Results"])
 def get_result_summary(filename: str) -> dict:
     """Ritorna i metadati e le statistiche di un risultato."""
-    filename = _safe_filename(filename)
-    path = FINAL_DIR / f"{filename}_summary.json"
-    _require_file(path)
+    path = _safe_path(filename, "_summary.json")
     return _load_json(path)
 
 
 @app.get("/download/{filename}/json", tags=["Download"])
 def download_json(filename: str) -> FileResponse:
     """Download del file JSON grezzo."""
-    filename = _safe_filename(filename)
-    path = FINAL_DIR / f"{filename}.json"
-    _require_file(path)
+    path = _safe_path(filename, ".json")
     return FileResponse(
         path,
         media_type="application/json",
-        filename=f"{filename}.json",
+        filename=path.name,
     )
 
 
 @app.get("/download/{filename}/csv", tags=["Download"])
 def download_csv(filename: str) -> FileResponse:
     """Download del file CSV."""
-    filename = _safe_filename(filename)
-    path = FINAL_DIR / f"{filename}.csv"
-    _require_file(path)
+    path = _safe_path(filename, ".csv")
     return FileResponse(
         path,
         media_type="text/csv; charset=utf-8",
-        filename=f"{filename}.csv",
+        filename=path.name,
     )
