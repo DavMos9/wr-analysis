@@ -1,0 +1,106 @@
+# ── Variabili d'ambiente ────────────────────────────────────────────────────
+# Rinomina .env.example in .env e inserisci le API key prima di avviare.
+
+services:
+
+  # ── Pipeline Service ────────────────────────────────────────────────────────
+  pipeline-service:
+    build:
+      context: ./services/pipeline_service
+    volumes:
+      # Core della pipeline montato in sola lettura — nessuna copia nell'immagine.
+      # Aggiustare il path relativo se questa cartella viene spostata.
+      - ../wr-analysis-light:/app/core:ro
+      - pipeline_data:/app/data
+    env_file: .env
+    networks: [backend]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ── Results Service ─────────────────────────────────────────────────────────
+  results-service:
+    build:
+      context: ./services/results_service
+    volumes:
+      - pipeline_data:/app/data:ro   # read-only: non scrive mai dati
+    networks: [backend]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ── Scheduler Service ───────────────────────────────────────────────────────
+  scheduler-service:
+    build:
+      context: ./services/scheduler_service
+    volumes:
+      - pipeline_data:/app/data      # scrive scheduler.db
+    environment:
+      PIPELINE_SERVICE_URL: http://pipeline-service:8001
+    networks: [backend]
+    restart: unless-stopped
+    depends_on:
+      - pipeline-service
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ── Frontend ────────────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./services/frontend
+    networks: [backend]
+    restart: unless-stopped
+
+  # ── Dashboard (Streamlit) ───────────────────────────────────────────────────
+  dashboard:
+    build:
+      context: ./services/dashboard
+    volumes:
+      # Codice sorgente montato in sola lettura — nessuna copia nell'immagine.
+      # Aggiustare il path relativo se la cartella Grafici viene spostata.
+      - ../Grafici/wr_analysis:/app:ro
+    env_file: .env
+    networks: [backend]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/dashboard/_stcore/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s   # Streamlit impiega alcuni secondi ad avviarsi
+
+  # ── Nginx reverse proxy ─────────────────────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    networks: [backend]
+    depends_on:
+      - pipeline-service
+      - results-service
+      - scheduler-service
+      - frontend
+      - dashboard
+    restart: unless-stopped
+
+# ── Volumes ──────────────────────────────────────────────────────────────────
+volumes:
+  # Volume condiviso tra pipeline-service, results-service e scheduler-service.
+  # Contiene data/final/, data/raw/ e scheduler.db.
+  pipeline_data:
+
+# ── Networks ──────────────────────────────────────────────────────────────────
+networks:
+  backend:
+    driver: bridge

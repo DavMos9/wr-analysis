@@ -1,0 +1,26 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# curl necessario per l'healthcheck
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Dipendenze Python installate a build time — il codice è montato a runtime.
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Il codice app (Grafici/wr_analysis) viene montato come volume in /app
+# tramite bind-mount in docker-compose — non copiato nell'immagine.
+# Questo permette di aggiornare i sorgenti senza ricostruire l'immagine.
+
+EXPOSE 8501
+
+CMD ["streamlit", "run", "app.py", \
+     "--server.port=8501", \
+     "--server.address=0.0.0.0", \
+     "--server.baseUrlPath=/dashboard", \
+     "--server.headless=true", \
+     "--server.enableCORS=false", \
+     "--server.enableXsrfProtection=false"]

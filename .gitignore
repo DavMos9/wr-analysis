@@ -1,0 +1,75 @@
+# ── Environment ────────────────────────────────────────────────────────────────
+# Never commit real credentials — copy .env.example → .env and fill in keys.
+.env
+!.env.example
+
+# ── Pipeline data — generated at runtime, never versioned ────────────────────
+# Use negation rules so .gitkeep inside each directory is still tracked.
+data/final/*.json
+data/final/*.csv
+data/raw/*.json
+data/*.db
+data/.DS_Store
+
+# ── Logs — written at runtime ─────────────────────────────────────────────────
+logs/*.log
+
+# ── Runtime / PID files ───────────────────────────────────────────────────────
+.pids
+*.pid
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+*.whl
+pip-wheel-metadata/
+.venv/
+venv/
+env/
+ENV/
+
+# ── Virtual environments (if running services locally) ────────────────────────
+services/pipeline_service/.venv/
+services/results_service/.venv/
+services/scheduler_service/.venv/
+
+# ── Node / Frontend ───────────────────────────────────────────────────────────
+node_modules/
+services/frontend/dist/
+services/frontend/.vite/
+
+# ── macOS system / personal files ────────────────────────────────────────────
+.DS_Store
+*.DS_Store
+*.plist
+
+# ── Windows ───────────────────────────────────────────────────────────────────
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# ── IDE ───────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# ── Testing ───────────────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ── Type checkers ─────────────────────────────────────────────────────────────
+.mypy_cache/
+.dmypy.json
+.ruff_cache/
