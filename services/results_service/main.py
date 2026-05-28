@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 
 # Configura il root logger prima di qualsiasi uso: i messaggi INFO applicativi
@@ -59,24 +60,25 @@ def _load_json(path: Path) -> list | dict:
         raise HTTPException(status_code=500, detail=f"Errore lettura file: {e}")
 
 
+# Allowlist per i filename: build_filename() produce solo CamelCase alfanumerico
+# (es. "ZendayaEuphoria"). La regex whitelist è verificabile staticamente
+# da CodeQL e da tool di analisi, a differenza di un approccio blocklist.
+_FILENAME_RE = re.compile(r"^[A-Za-z0-9]{1,300}$")
+
+
 def _safe_path(filename: str, suffix: str) -> Path:
     """
     Costruisce e valida un path all'interno di FINAL_DIR.
 
-    Doppia protezione contro path traversal:
-    1. Rifiuta immediatamente separatori e '..' nel nome file raw.
-    2. Risolve il path finale e verifica che sia sotto FINAL_DIR anche
-       in presenza di symlink o encoding insoliti (CWE-22).
+    Usa una allowlist strict: accetta solo caratteri alfanumerici (CamelCase),
+    che è l'unico formato prodotto da build_filename(). Qualsiasi input
+    contenente separatori, '..' o caratteri speciali viene rifiutato a priori.
     """
-    if "/" in filename or "\\" in filename or ".." in filename:
+    if not _FILENAME_RE.fullmatch(filename):
         raise HTTPException(status_code=400, detail="Nome file non valido.")
-    path = (FINAL_DIR / f"{filename}{suffix}").resolve()
-    try:
-        path.relative_to(FINAL_DIR.resolve())
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Nome file non valido.")
+    path = FINAL_DIR / f"{filename}{suffix}"
     if not path.exists():
-        raise HTTPException(status_code=404, detail=f"File non trovato: {Path(filename).name}{suffix}")
+        raise HTTPException(status_code=404, detail=f"File non trovato: {filename}{suffix}")
     return path
 
 
