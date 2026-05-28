@@ -61,8 +61,8 @@ def _load_json(path: Path) -> list | dict:
 
 
 # Allowlist per i filename: build_filename() produce solo CamelCase alfanumerico
-# (es. "ZendayaEuphoria"). La regex whitelist è verificabile staticamente
-# da CodeQL e da tool di analisi, a differenza di un approccio blocklist.
+# (es. "ZendayaEuphoria"). La regex whitelist esclude a priori separatori, '..',
+# null byte e qualsiasi carattere non alfanumerico.
 _FILENAME_RE = re.compile(r"^[A-Za-z0-9]{1,300}$")
 
 
@@ -70,13 +70,21 @@ def _safe_path(filename: str, suffix: str) -> Path:
     """
     Costruisce e valida un path all'interno di FINAL_DIR.
 
-    Usa una allowlist strict: accetta solo caratteri alfanumerici (CamelCase),
-    che è l'unico formato prodotto da build_filename(). Qualsiasi input
-    contenente separatori, '..' o caratteri speciali viene rifiutato a priori.
+    Protezione a due livelli:
+    1. Allowlist regex — accetta solo CamelCase alfanumerico, unico formato
+       prodotto da build_filename(). Rifiuta separatori, '..' e caratteri speciali.
+    2. Resolve + is_relative_to — risolve eventuali symlink e verifica che il
+       path finale resti all'interno di FINAL_DIR (defense-in-depth; pattern
+       riconosciuto dai tool di analisi statica come sanitizer CWE-022).
     """
     if not _FILENAME_RE.fullmatch(filename):
         raise HTTPException(status_code=400, detail="Nome file non valido.")
-    path = FINAL_DIR / f"{filename}{suffix}"
+    # lgtm[py/path-injection] - filename è validato dall'allowlist _FILENAME_RE
+    # (^[A-Za-z0-9]{1,300}$): nessun separatore o carattere di traversal possibile.
+    # Il check is_relative_to() sotto garantisce ulteriore contenimento.
+    path = (FINAL_DIR / f"{filename}{suffix}").resolve()
+    if not path.is_relative_to(FINAL_DIR.resolve()):
+        raise HTTPException(status_code=400, detail="Nome file non valido.")
     if not path.exists():
         raise HTTPException(status_code=404, detail=f"File non trovato: {filename}{suffix}")
     return path
