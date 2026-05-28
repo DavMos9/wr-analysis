@@ -16,8 +16,8 @@ from fastapi.responses import FileResponse
 
 log = logging.getLogger(__name__)
 
-import os as _os
-BASE_DIR  = Path(_os.getenv("DATA_DIR", "/app/data"))
+import os
+BASE_DIR  = Path(os.getenv("DATA_DIR", "/app/data"))
 FINAL_DIR = BASE_DIR / "final"
 
 app = FastAPI(
@@ -49,13 +49,14 @@ _FILENAME_RE = re.compile(r"^[A-Za-z0-9]{1,300}$")
 def _safe_path(filename: str, suffix: str) -> Path:
     if not _FILENAME_RE.fullmatch(filename):
         raise HTTPException(status_code=400, detail="Nome file non valido.")
-    safe = _os.path.basename(filename)
-    path = (FINAL_DIR / (safe + suffix)).resolve()
-    if not path.is_relative_to(FINAL_DIR.resolve()):
-        raise HTTPException(status_code=400, detail="Nome file non valido.")
-    if not path.exists():
-        raise HTTPException(status_code=404, detail=f"File non trovato: {safe}{suffix}")
-    return path
+    # filename è usato solo per confronto, mai per costruire un path.
+    # Il path restituito è derivato da FINAL_DIR.iterdir() (sorgente filesystem).
+    wanted = filename + suffix
+    if FINAL_DIR.exists():
+        for candidate in FINAL_DIR.iterdir():
+            if candidate.name == wanted:
+                return candidate
+    raise HTTPException(status_code=404, detail=f"File non trovato: {filename}{suffix}")
 
 
 def _iter_result_files() -> list[Path]:
