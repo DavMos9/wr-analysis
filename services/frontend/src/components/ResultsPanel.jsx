@@ -22,7 +22,7 @@ function sentimentInfo(value) {
   return              { label: 'neutro',    color: 'text-yellow-500' }
 }
 
-function RecordRow({ record, idx }) {
+function RecordRow({ record }) {
   const [open, setOpen] = useState(false)
   const sent = sentimentInfo(record.sentiment)
 
@@ -162,7 +162,7 @@ function ResultDetail({ filename, onClose }) {
           <div className="p-8 text-center text-gray-400 text-sm">Nessun risultato.</div>
         ) : (
           // key stabile su url (unico per record) — evita che React perda lo stato "aperto"
-          filtered.map((r, i) => <RecordRow key={r.url || r.title || i} record={r} idx={i} />)
+          filtered.map((r, i) => <RecordRow key={r.url || r.title || i} record={r} />)
         )}
       </div>
     </div>
@@ -172,13 +172,15 @@ function ResultDetail({ filename, onClose }) {
 export default function ResultsPanel() {
   const [results, setResults]     = useState([])
   const [loading, setLoading]     = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [selected, setSelected]   = useState(null)
 
   const reload = () => {
     setLoading(true)
+    setLoadError('')
     listResults()
       .then(setResults)
-      .catch(() => {})
+      .catch(err => setLoadError(err.message || 'Impossibile caricare i risultati.'))
       .finally(() => setLoading(false))
   }
 
@@ -200,6 +202,8 @@ export default function ResultsPanel() {
 
         {loading ? (
           <div className="p-8 text-center text-gray-400 text-sm">Caricamento...</div>
+        ) : loadError ? (
+          <div className="p-8 text-center text-red-500 text-sm">{loadError}</div>
         ) : results.length === 0 ? (
           <div className="p-8 text-center">
             <p className="text-gray-400 text-sm">Nessuna analisi trovata.</p>

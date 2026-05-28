@@ -57,9 +57,9 @@ This project wraps the core Python pipeline in a set of RESTful microservices an
 
 | Service | Port | Responsibility |
 |---|---|---|
-| `pipeline-service` | 8001 | Executes the `collect→normalize→clean→dedup→enrich→export` pipeline as async background jobs |
+| `pipeline-service` | 8001 | Executes the `collect→normalize→clean→dedup→enrich→export` pipeline as async background jobs. Job history persisted in SQLite — survives restarts |
 | `results-service` | 8002 | Read-only access to processed results in `data/final/` |
-| `scheduler-service` | 8003 | Manages periodic pipeline runs (APScheduler + SQLite WAL) |
+| `scheduler-service` | 8003 | Manages periodic pipeline runs (APScheduler + SQLite WAL). Reconciles scheduler state on boot — schedules survive restarts automatically |
 | `frontend` | 3000 | React + Vite SPA — run panel, results browser, schedule manager |
 | `dashboard` | 8501 | Streamlit dashboard — time-series sentiment/volume charts from PostgreSQL |
 | `nginx` | 80 | Reverse proxy — routes requests to the correct backend service |
@@ -259,7 +259,18 @@ Poll job status.
 Status lifecycle: `queued` → `running` → `done` | `failed`
 
 #### `GET /api/pipeline/runs`
-List all jobs in memory since last service start.
+List all jobs ordered by creation date (descending). Persisted in SQLite — survives container restarts.
+
+**Query parameters (optional):**
+
+| Parameter | Default | Description |
+|---|---|---|
+| `limit` | `50` | Maximum number of jobs to return (1–500) |
+| `offset` | `0` | Pagination offset |
+
+```
+GET /api/pipeline/runs?limit=20&offset=0
+```
 
 #### `GET /api/pipeline/sources`
 List all available sources with defaults and opt-in sources.
@@ -444,7 +455,8 @@ docker compose exec scheduler-service python3 -c \
 | `pipeline-service` shows `(unhealthy)` | Service crashed at startup | Check `docker compose logs pipeline-service` |
 | 502 Bad Gateway on pipeline endpoints | Service not yet running | Wait ~30s after `up`; check `docker compose ps` |
 | Source selector shows "0 / 0" | `pipeline-service` unreachable | Verify service is healthy |
-| Schedules disappeared after restart | Partial restart without full `down` | Run `docker compose down && docker compose up -d` |
+| Schedules disappeared after restart | APScheduler jobstore lost (e.g. volume recreated) | Boot reconciliation runs automatically; if schedules are still missing, the `scheduler.db` volume was deleted — recreate the schedules via the UI |
+| Jobs not visible after page refresh | First-visit only: job history is now loaded from SQLite on mount | Refresh the **Run** tab; history is restored automatically |
 | Dashboard fails to load | PostgreSQL credentials missing/wrong | Check `DB_*` variables in `.env` |
 | NLP sentiment is `null` for all records | `transformers`/`torch` not yet loaded, or text too short | First run downloads the model; text < 15 chars skips sentiment |
 | `wr-analysis-light` bind-mount not found | Sibling directory missing or renamed | Ensure `../wr-analysis-light` exists relative to this repo |

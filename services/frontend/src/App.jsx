@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import RunPanel      from './components/RunPanel'
 import ResultsPanel  from './components/ResultsPanel'
 import SchedulePanel from './components/SchedulePanel'
@@ -11,6 +11,14 @@ const TABS = [
 
 export default function App() {
   const [tab, setTab] = useState('run')
+  // Traccia i tab già visitati: i pannelli vengono montati al primo accesso
+  // e poi mantenuti vivi (hidden) per preservare stato e polling attivi.
+  const [visited, setVisited] = useState(() => new Set(['run']))
+
+  const switchTab = useCallback((id) => {
+    setTab(id)
+    setVisited(prev => { const s = new Set(prev); s.add(id); return s })
+  }, [])
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -35,7 +43,7 @@ export default function App() {
               {TABS.map(t => (
                 <button
                   key={t.id}
-                  onClick={() => setTab(t.id)}
+                  onClick={() => switchTab(t.id)}
                   className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors
                     ${tab === t.id
                       ? 'bg-blue-50 text-blue-700'
@@ -61,11 +69,14 @@ export default function App() {
         </div>
       </nav>
 
-      {/* ── Content ── */}
+      {/* ── Content ──
+           I pannelli vengono montati al primo accesso e poi tenuti vivi con
+           display:none — così lo stato (job list, polling attivo) non si perde
+           quando l'utente cambia tab. */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {tab === 'run'       && <RunPanel />}
-        {tab === 'results'   && <ResultsPanel />}
-        {tab === 'schedules' && <SchedulePanel />}
+        {visited.has('run')       && <div style={{ display: tab === 'run'       ? undefined : 'none' }}><RunPanel /></div>}
+        {visited.has('results')   && <div style={{ display: tab === 'results'   ? undefined : 'none' }}><ResultsPanel /></div>}
+        {visited.has('schedules') && <div style={{ display: tab === 'schedules' ? undefined : 'none' }}><SchedulePanel /></div>}
       </main>
 
       {/* ── Footer ── */}

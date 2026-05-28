@@ -2,7 +2,18 @@ import { useEffect, useState } from 'react'
 import { listSchedules, createSchedule, deleteSchedule, toggleSchedule } from '../api/client'
 import SourceSelector from './SourceSelector'
 
-const today = () => new Date().toISOString().slice(0, 10)
+const FORM_DEFAULTS = {
+  target:           '',
+  topic:            '',
+  frequency:        'weekly',
+  hour:             8,
+  day_of_week:      'mon',
+  date_window_days: 7,
+  sources:          [],
+  max_results:      20,
+  news_language:    'en',
+  save_raw:         true,
+}
 
 const FREQ_LABELS = {
   hourly:  'Ogni ora',
@@ -25,7 +36,7 @@ function formatNext(isoStr) {
   })
 }
 
-function ScheduleRow({ sched, onToggle, onDelete }) {
+function ScheduleRow({ sched, onToggle, onDelete, pendingDelete, onConfirmDelete, onCancelDelete }) {
   const enabled = !!sched.enabled
 
   return (
@@ -59,22 +70,43 @@ function ScheduleRow({ sched, onToggle, onDelete }) {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={() => onToggle(sched.id, !enabled)}
-            title={enabled ? 'Disabilita' : 'Abilita'}
-            className={`w-10 h-5 rounded-full transition-colors relative
-              ${enabled ? 'bg-blue-500' : 'bg-gray-300'}`}
-          >
-            <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all
-              ${enabled ? 'left-5' : 'left-0.5'}`} />
-          </button>
-          <button
-            onClick={() => onDelete(sched.id)}
-            title="Elimina"
-            className="text-gray-300 hover:text-red-500 transition-colors text-sm"
-          >
-            🗑
-          </button>
+          {pendingDelete === sched.id ? (
+            /* Conferma inline — sostituisce window.confirm() */
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="text-gray-500">Eliminare?</span>
+              <button
+                onClick={() => onConfirmDelete(sched.id)}
+                className="px-2 py-1 rounded bg-red-500 text-white hover:bg-red-600 transition-colors font-medium"
+              >
+                Sì
+              </button>
+              <button
+                onClick={onCancelDelete}
+                className="px-2 py-1 rounded bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+              >
+                No
+              </button>
+            </div>
+          ) : (
+            <>
+              <button
+                onClick={() => onToggle(sched.id, !enabled)}
+                title={enabled ? 'Disabilita' : 'Abilita'}
+                className={`w-10 h-5 rounded-full transition-colors relative
+                  ${enabled ? 'bg-blue-500' : 'bg-gray-300'}`}
+              >
+                <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all
+                  ${enabled ? 'left-5' : 'left-0.5'}`} />
+              </button>
+              <button
+                onClick={() => onDelete(sched.id)}
+                title="Elimina"
+                className="text-gray-300 hover:text-red-500 transition-colors text-sm"
+              >
+                🗑
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -83,32 +115,24 @@ function ScheduleRow({ sched, onToggle, onDelete }) {
 
 export default function SchedulePanel() {
   const [schedules, setSchedules] = useState([])
-  const [loading, setLoading]     = useState(true)
-  const [showForm, setShowForm]   = useState(false)
+  const [loading, setLoading]       = useState(true)
+  const [loadError, setLoadError]   = useState('')
+  const [showForm, setShowForm]     = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError]         = useState('')
+  const [error, setError]           = useState('')
   const [actionError, setActionError] = useState('')
+  const [pendingDelete, setPendingDelete] = useState(null)  // id schedule in attesa conferma
 
-  const [form, setForm] = useState({
-    target:           '',
-    topic:            '',
-    frequency:        'weekly',
-    hour:             8,
-    day_of_week:      'mon',
-    date_window_days: 7,
-    sources:          [],
-    max_results:      20,
-    news_language:    'en',
-    save_raw:         true,
-  })
+  const [form, setForm] = useState(FORM_DEFAULTS)
 
   const setField = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const reload = () => {
     setLoading(true)
+    setLoadError('')
     listSchedules()
       .then(setSchedules)
-      .catch(() => {})
+      .catch(err => setLoadError(err.message || 'Impossibile caricare gli schedule.'))
       .finally(() => setLoading(false))
   }
 
@@ -125,6 +149,7 @@ export default function SchedulePanel() {
         date_window_days: Number(form.date_window_days),
         max_results:      Number(form.max_results),
       })
+      setForm(FORM_DEFAULTS)
       setShowForm(false)
       reload()
     } catch (err) {
@@ -144,8 +169,10 @@ export default function SchedulePanel() {
     }
   }
 
-  const handleDelete = async (id) => {
-    if (!confirm('Eliminare questo schedule?')) return
+  const handleDelete = (id) => setPendingDelete(id)
+
+  const handleConfirmDelete = async (id) => {
+    setPendingDelete(null)
     setActionError('')
     try {
       await deleteSchedule(id)
@@ -154,6 +181,8 @@ export default function SchedulePanel() {
       setActionError(`Impossibile eliminare lo schedule: ${err.message}`)
     }
   }
+
+  const handleCancelDelete = () => setPendingDelete(null)
 
   return (
     <div className="space-y-5">
@@ -281,6 +310,8 @@ export default function SchedulePanel() {
       {/* Lista schedule */}
       {loading ? (
         <div className="text-center text-gray-400 text-sm py-8">Caricamento...</div>
+      ) : loadError ? (
+        <div className="text-center text-red-500 text-sm py-8">{loadError}</div>
       ) : schedules.length === 0 ? (
         <div className="bg-white rounded-xl border border-dashed border-gray-300 p-10 text-center">
           <p className="text-gray-400 text-sm">Nessuno schedule configurato.</p>
@@ -296,6 +327,9 @@ export default function SchedulePanel() {
               sched={s}
               onToggle={handleToggle}
               onDelete={handleDelete}
+              pendingDelete={pendingDelete}
+              onConfirmDelete={handleConfirmDelete}
+              onCancelDelete={handleCancelDelete}
             />
           ))}
         </div>

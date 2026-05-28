@@ -18,7 +18,14 @@ async function _fetch(url, options = {}) {
   })
   if (!res.ok) {
     const text = await res.text()
-    throw new Error(`[${res.status}] ${text}`)
+    // FastAPI restituisce {"detail": "..."} — estrai il messaggio leggibile
+    let msg = text
+    try {
+      const detail = JSON.parse(text)?.detail
+      if (typeof detail === 'string')  msg = detail
+      else if (Array.isArray(detail))  msg = detail.map(e => e.msg).join(', ')
+    } catch {}
+    throw new Error(`[${res.status}] ${msg}`)
   }
   // 204 No Content
   if (res.status === 204) return null

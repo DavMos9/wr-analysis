@@ -23,8 +23,8 @@ import logging
 import os
 import sqlite3
 import uuid
-from contextlib import contextmanager
-from datetime import date, datetime, timedelta
+from contextlib import asynccontextmanager, contextmanager
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal
 
@@ -36,6 +36,12 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+# Configura il root logger prima di qualsiasi uso: i messaggi INFO applicativi
+# sono visibili nei log di Docker (uvicorn configura solo i suoi logger).
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 log = logging.getLogger(__name__)
 
 PIPELINE_SERVICE_URL = os.getenv("PIPELINE_SERVICE_URL", "http://pipeline-service:8001")
@@ -56,7 +62,7 @@ def _db():
 
 
 def _init_db() -> None:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    # DATA_DIR già creata a livello di modulo (necessaria per SQLAlchemy jobstore)
     with _db() as conn:
         # WAL mode: consente letture concorrenti durante scritture APScheduler
         conn.execute("PRAGMA journal_mode=WAL")
@@ -108,7 +114,7 @@ def _fire_pipeline(schedule_id: str, base_config: dict, date_window_days: int) -
         with _db() as conn:
             conn.execute(
                 "UPDATE schedules SET last_run=?, last_run_id=? WHERE id=?",
-                (datetime.utcnow().isoformat(), run_id, schedule_id),
+                (datetime.now(timezone.utc).isoformat(), run_id, schedule_id),
             )
         log.info("[scheduler] Run avviato: run_id=%s", run_id)
     except Exception as exc:
@@ -147,21 +153,7 @@ def _build_cron(frequency: FrequencyType, hour: int, day_of_week: DayOfWeekType)
     return mapping[frequency]
 
 
-# ── FastAPI app ───────────────────────────────────────────────────────────────
-
-app = FastAPI(
-    title="Scheduler Service",
-    description="Gestione run periodici della pipeline WR-Analysis-Light.",
-    version="1.0.0",
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
+# ── Reconciliazione boot ──────────────────────────────────────────────────────
 
 def _reconcile_jobs() -> None:
     """
@@ -192,6 +184,15 @@ def _reconcile_jobs() -> None:
                 recovered += 1
                 log.warning("[scheduler] Ricreato job mancante %s (%s/%s)",
                             d["id"][:8], d["target"], d["topic"])
+            elif job.next_run_time is None:
+                # Job presente ma in pausa nonostante enabled=1 — lo riprendiamo
+                try:
+                    scheduler.resume_job(d["id"])
+                    recovered += 1
+                    log.warning("[scheduler] Ripreso job in pausa %s (%s/%s)",
+                                d["id"][:8], d["target"], d["topic"])
+                except Exception as exc:
+                    log.error("[scheduler] Impossibile riprendere job %s: %s", d["id"][:8], exc)
         else:
             # Schedule disabilitato: assicuriamoci che sia in pausa
             if job is not None and job.next_run_time is not None:
@@ -203,25 +204,42 @@ def _reconcile_jobs() -> None:
     log.info("[scheduler] Reconciliazione boot: %d job ripristinati.", recovered)
 
 
-@app.on_event("startup")
-def startup() -> None:
+# ── FastAPI app ───────────────────────────────────────────────────────────────
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     _init_db()
     scheduler.start()
-    _reconcile_jobs()
-    log.info("Scheduler avviato.")
+    try:
+        _reconcile_jobs()
+        log.info("Scheduler avviato.")
+        yield
+    finally:
+        # Garantisce shutdown anche se _reconcile_jobs() solleva un'eccezione
+        scheduler.shutdown(wait=True)
 
 
-@app.on_event("shutdown")
-def shutdown() -> None:
-    scheduler.shutdown(wait=False)
+app = FastAPI(
+    title="Scheduler Service",
+    description="Gestione run periodici della pipeline WR-Analysis-Light.",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost", "http://localhost:80", "http://127.0.0.1"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # ── Schemi Pydantic ───────────────────────────────────────────────────────────
 
 class ScheduleRequest(BaseModel):
     # Identificazione analisi
-    target: str = Field(..., min_length=1)
-    topic: str = Field(..., min_length=1)
+    target: str = Field(..., min_length=1, max_length=200)
+    topic: str = Field(..., min_length=1, max_length=200)
     # Frequenza
     frequency: FrequencyType = Field(..., description="hourly | daily | weekly | monthly")
     hour: int = Field(default=8, ge=0, le=23, description="Ora di esecuzione (0-23)")
@@ -234,7 +252,7 @@ class ScheduleRequest(BaseModel):
     # Parametri pipeline
     sources: list[str] = Field(default_factory=list, description="Fonti (vuoto = default)")
     max_results: int = Field(default=20, ge=1, le=100)
-    news_language: str = Field(default="en")
+    news_language: str = Field(default="en", pattern=r"^[a-z]{2}(-[A-Z]{2})?$", description="Codice ISO 639-1 (es. 'en', 'it', 'zh-CN')")
     save_raw: bool = Field(default=True)
 
 
@@ -254,7 +272,7 @@ def create_schedule(req: ScheduleRequest) -> dict:
     """Crea un nuovo schedule periodico."""
     schedule_id = str(uuid.uuid4())
     cron        = _build_cron(req.frequency, req.hour, req.day_of_week)
-    now         = datetime.utcnow().isoformat()
+    now         = datetime.now(timezone.utc).isoformat()
 
     # Configurazione che verrà passata a pipeline-service a ogni fire
     pipeline_config = {

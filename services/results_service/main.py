@@ -18,6 +18,13 @@ import json
 import logging
 from pathlib import Path
 
+# Configura il root logger prima di qualsiasi uso: i messaggi INFO applicativi
+# sono visibili nei log di Docker (uvicorn configura solo i suoi logger).
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -36,7 +43,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost", "http://localhost:80", "http://127.0.0.1"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -98,19 +105,23 @@ def list_results() -> list[dict]:
     output = []
     for json_path in _iter_result_files():
         try:
-            records  = json.loads(json_path.read_text(encoding="utf-8"))
-            filename = json_path.stem
-
+            filename     = json_path.stem
             summary_path = FINAL_DIR / f"{filename}_summary.json"
             summary      = json.loads(summary_path.read_text(encoding="utf-8")) if summary_path.exists() else {}
+            csv_path     = FINAL_DIR / f"{filename}.csv"
 
-            csv_path = FINAL_DIR / f"{filename}.csv"
+            # Usa total_records dal summary per evitare di deserializzare l'intero file.
+            # Fallback al conteggio diretto solo se il summary è assente.
+            n_records = summary.get("total_records")
+            if n_records is None:
+                records   = json.loads(json_path.read_text(encoding="utf-8"))
+                n_records = len(records)
 
             output.append({
                 "filename":    filename,
                 "target":      summary.get("target", ""),
                 "topic":       summary.get("topic", ""),
-                "n_records":   len(records),
+                "n_records":   n_records,
                 "last_run":    summary.get("execution_date", ""),
                 "sources":     list(summary.get("sources", {}).keys()),
                 "has_csv":     csv_path.exists(),

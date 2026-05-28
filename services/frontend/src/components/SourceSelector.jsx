@@ -11,6 +11,7 @@ export default function SourceSelector({ selected, onChange }) {
   const [defaults, setDefaults]         = useState([])
   const [optIn, setOptIn]               = useState([])
   const [loading, setLoading]           = useState(true)
+  const [loadError, setLoadError]       = useState('')
 
   useEffect(() => {
     getSources()
@@ -20,7 +21,7 @@ export default function SourceSelector({ selected, onChange }) {
         setOptIn(data.opt_in || [])
         if (selected.length === 0) onChange(data.defaults || [])
       })
-      .catch(() => {})
+      .catch(err => setLoadError(err.message || 'Impossibile caricare le sorgenti.'))
       .finally(() => setLoading(false))
   }, []) // eslint-disable-line
 
@@ -36,7 +37,8 @@ export default function SourceSelector({ selected, onChange }) {
   const selectNone = () => onChange([])
   const selectDefault = () => onChange([...defaults])
 
-  if (loading) return <p className="text-sm text-gray-400">Caricamento sorgenti...</p>
+  if (loading)   return <p className="text-sm text-gray-400">Caricamento sorgenti...</p>
+  if (loadError) return <p className="text-sm text-red-500">{loadError}</p>
 
   const groups = [
     { label: 'Sorgenti predefinite', items: defaults },

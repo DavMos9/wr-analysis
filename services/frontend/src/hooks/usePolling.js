@@ -10,6 +10,7 @@ export function usePolling(fn, intervalMs, active) {
 
   useEffect(() => {
     if (!active) return
+    fnRef.current()                                      // fire immediato al primo render
     const id = setInterval(() => fnRef.current(), intervalMs)
     return () => clearInterval(id)
   }, [active, intervalMs])

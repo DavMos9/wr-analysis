@@ -1,14 +1,9 @@
-import { useState } from 'react'
-import { startRun, getRunStatus } from '../api/client'
+import { useState, useEffect } from 'react'
+import { startRun, getRunStatus, listRuns } from '../api/client'
 import { usePolling } from '../hooks/usePolling'
 import SourceSelector from './SourceSelector'
 
 const today = () => new Date().toISOString().slice(0, 10)
-const daysAgo = (n) => {
-  const d = new Date()
-  d.setDate(d.getDate() - n)
-  return d.toISOString().slice(0, 10)
-}
 
 const STATUS_STYLES = {
   queued:  'bg-yellow-100 text-yellow-800 border-yellow-200',
@@ -76,10 +71,23 @@ export default function RunPanel() {
     dry_run:       false,
   })
 
-  const [jobs, setJobs]       = useState([])   // lista job di questa sessione
+  const [jobs, setJobs]        = useState([])   // lista job (caricata dal backend)
   const [activeRun, setActive] = useState(null) // run_id in polling
   const [loading, setLoading]  = useState(false)
   const [error, setError]      = useState('')
+
+  // Carica la storia job al mount — mostra anche i job di sessioni precedenti
+  useEffect(() => {
+    listRuns()
+      .then(runs => {
+        if (runs.length === 0) return
+        setJobs(runs)
+        // Riprende il polling se c'è un job ancora in corso (es. ricarica pagina)
+        const inProgress = runs.find(r => r.status === 'queued' || r.status === 'running')
+        if (inProgress) setActive(inProgress.run_id)
+      })
+      .catch(() => {}) // non critico: la lista storica è opzionale
+  }, [])
 
   // Polling sullo stato del job attivo
   usePolling(async () => {
@@ -118,7 +126,8 @@ export default function RunPanel() {
         created_at: res.created_at,
         n_added: null, n_total: null, filename: null, error: null,
       }
-      setJobs(prev => [newJob, ...prev])
+      // Aggiunta ottimistica: il job compare subito senza attendere il prossimo polling
+      setJobs(prev => [newJob, ...prev.filter(j => j.run_id !== res.run_id)])
       setActive(res.run_id)
     } catch (err) {
       setError(err.message)
@@ -260,10 +269,10 @@ export default function RunPanel() {
 
       {/* ── Job list ── */}
       <div className="space-y-3">
-        <h2 className="text-lg font-semibold text-gray-900">Job di questa sessione</h2>
+        <h2 className="text-lg font-semibold text-gray-900">Job recenti</h2>
         {jobs.length === 0 ? (
           <div className="bg-white rounded-xl border border-dashed border-gray-300 p-8 text-center">
-            <p className="text-gray-400 text-sm">Nessun job avviato.</p>
+            <p className="text-gray-400 text-sm">Nessun job trovato.</p>
             <p className="text-gray-300 text-xs mt-1">Compila il form e avvia un'analisi.</p>
           </div>
         ) : (

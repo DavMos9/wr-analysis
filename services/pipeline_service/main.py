@@ -5,24 +5,30 @@ Espone la pipeline esistente come servizio REST asincrono.
 I job vengono eseguiti in background (threading) e il client può
 fare polling sullo stato tramite run_id.
 
+Job store: SQLite persistente — i job sopravvivono ai restart del container.
+Al boot, i job rimasti in stato 'running' o 'queued' vengono marcati 'failed'.
+
 Endpoints:
   POST /run          — avvia un job asincrono, ritorna run_id
   GET  /run/{id}     — stato e progresso del job
-  GET  /runs         — lista di tutti i job in memoria
+  GET  /runs         — lista di tutti i job (persistente tra restart)
   GET  /sources      — elenco sorgenti disponibili
   GET  /healthz      — health check
 """
 from __future__ import annotations
 
 import logging
+import os
+import sqlite3
 import sys
 import threading
 import uuid
-from datetime import date, datetime, timedelta
+from contextlib import asynccontextmanager, contextmanager
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -39,51 +45,114 @@ from utils import configure_logging, now_timestamp, build_filename  # noqa: E402
 configure_logging()
 log = logging.getLogger(__name__)
 
-import os as _os
-BASE_DIR = Path(_os.getenv("DATA_DIR", "/app/data"))   # volume condiviso tra tutti i servizi
+BASE_DIR = Path(os.getenv("DATA_DIR", "/app/data"))   # volume condiviso tra tutti i servizi
+JOBS_DB_PATH = BASE_DIR / "jobs.db"
 
 REGISTRY = build_registry()
 ALL_SOURCES = list(REGISTRY.keys())
 OPT_IN_SOURCES = frozenset({"stackexchange", "hackernews"})
 DEFAULT_SOURCES = [s for s in ALL_SOURCES if s not in OPT_IN_SOURCES]
 
-# ── In-memory job store ───────────────────────────────────────────────────────
-# Per un deployment single-process è sufficiente. Upgrade a Redis/SQLite
-# se si vuole persistenza tra restart.
 
-_jobs: dict[str, dict[str, Any]] = {}
-_jobs_lock = threading.Lock()
+# ── SQLite job store ──────────────────────────────────────────────────────────
+# Persistente tra restart del container — a differenza dell'in-memory dict.
+# WAL mode: consente letture concorrenti dai thread di background.
 
-# Traccia i thread attivi per attendere la fine pulita al shutdown
+@contextmanager
+def _jobs_db():
+    conn = sqlite3.connect(str(JOBS_DB_PATH))
+    conn.row_factory = sqlite3.Row
+    try:
+        yield conn
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _init_jobs_db() -> None:
+    BASE_DIR.mkdir(parents=True, exist_ok=True)
+    with _jobs_db() as conn:
+        # WAL mode impostato una sola volta — persiste sul file SQLite.
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS jobs (
+                run_id      TEXT PRIMARY KEY,
+                status      TEXT NOT NULL DEFAULT 'queued',
+                progress    TEXT NOT NULL DEFAULT '',
+                created_at  TEXT NOT NULL,
+                started_at  TEXT,
+                finished_at TEXT,
+                n_added     INTEGER,
+                n_total     INTEGER,
+                error       TEXT,
+                target      TEXT NOT NULL,
+                topic       TEXT NOT NULL,
+                filename    TEXT
+            )
+        """)
+        # Marca come falliti i job interrotti da un precedente restart
+        now = datetime.now(timezone.utc).isoformat()
+        conn.execute("""
+            UPDATE jobs
+            SET status      = 'failed',
+                finished_at = ?,
+                progress    = 'Interrotto (container riavviato).',
+                error       = 'Servizio riavviato durante l''esecuzione.'
+            WHERE status IN ('running', 'queued')
+        """, (now,))
+
+
+def _job_get(run_id: str) -> dict[str, Any]:
+    with _jobs_db() as conn:
+        row = conn.execute("SELECT * FROM jobs WHERE run_id=?", (run_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Job '{run_id}' non trovato.")
+    return dict(row)
+
+
+def _job_update(run_id: str, **kwargs: Any) -> None:
+    if not kwargs:
+        return
+    sets = ", ".join(f"{k}=?" for k in kwargs)
+    vals = list(kwargs.values()) + [run_id]
+    with _jobs_db() as conn:
+        conn.execute(f"UPDATE jobs SET {sets} WHERE run_id=?", vals)  # noqa: S608
+
+
+# Traccia i thread attivi per attendere la fine pulita al shutdown.
+# Rimane in-memory: serve solo alla logica di graceful shutdown.
 _active_threads: dict[str, threading.Thread] = {}
 _threads_lock   = threading.Lock()
 
 
-def _job_get(run_id: str) -> dict[str, Any]:
-    with _jobs_lock:
-        # dict() dentro il lock: evita race condition con _job_update()
-        job = _jobs.get(run_id)
-        if job is None:
-            raise HTTPException(status_code=404, detail=f"Job '{run_id}' non trovato.")
-        return dict(job)
-
-
-def _job_update(run_id: str, **kwargs: Any) -> None:
-    with _jobs_lock:
-        _jobs[run_id].update(kwargs)
-
-
 # ── FastAPI app ───────────────────────────────────────────────────────────────
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    _init_jobs_db()
+    log.info("Pipeline service avviato. Job store: %s", JOBS_DB_PATH)
+    yield
+    with _threads_lock:
+        active = list(_active_threads.values())
+    if active:
+        log.warning("Shutdown: %d job in esecuzione — attendo fino a 60s...", len(active))
+        for t in active:
+            t.join(timeout=60)
+            if t.is_alive():
+                log.error("Thread %s non terminato entro il timeout: possibile corruzione dati.", t.name)
+    log.info("Pipeline service shutdown completato.")
+
 
 app = FastAPI(
     title="Pipeline Service",
     description="Esegue la pipeline WR-Analysis-Light come job asincroni REST.",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost", "http://localhost:80", "http://127.0.0.1"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -92,13 +161,13 @@ app.add_middleware(
 # ── Schemi Pydantic ───────────────────────────────────────────────────────────
 
 class RunRequest(BaseModel):
-    target: str = Field(..., min_length=1, description="Entità da analizzare")
-    topic: str = Field(..., min_length=1, description="Topic di ricerca")
+    target: str = Field(..., min_length=1, max_length=200, description="Entità da analizzare")
+    topic: str = Field(..., min_length=1, max_length=200, description="Topic di ricerca")
     date_from: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$", description="Data inizio (YYYY-MM-DD). Se None: nessun limite inferiore di data.")
     date_to: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$", description="Data fine (YYYY-MM-DD, default: oggi)")
     sources: list[str] = Field(default_factory=list, description="Fonti da interrogare (vuoto = default)")
     max_results: int = Field(default=20, ge=1, le=100, description="Risultati massimi per fonte")
-    news_language: str = Field(default="en", description="Lingua ISO 639-1 per NewsAPI")
+    news_language: str = Field(default="en", pattern=r"^[a-z]{2}(-[A-Z]{2})?$", description="Codice ISO 639-1 (es. 'en', 'it', 'zh-CN')")
     save_raw: bool = Field(default=True, description="Salva payload grezzi in data/raw/")
     dry_run: bool = Field(default=False, description="max_results=1 per fonte (test API)")
 
@@ -137,13 +206,12 @@ def _run_pipeline_background(run_id: str, req: RunRequest) -> None:
     """Eseguita in un thread separato. Aggiorna il job store durante l'esecuzione."""
     _job_update(run_id,
                 status="running",
-                started_at=datetime.utcnow().isoformat(),
+                started_at=datetime.now(timezone.utc).isoformat(),
                 progress="Avvio pipeline...")
     try:
         ts         = now_timestamp()
         run_date   = date.today().strftime("%Y-%m-%d")
         query      = _build_query(req.target, req.topic)
-        date_from  = req.date_from or None
         date_until = req.date_to or run_date
         filename   = build_filename(req.target, req.topic)
 
@@ -168,7 +236,7 @@ def _run_pipeline_background(run_id: str, req: RunRequest) -> None:
         if not active_sources:
             _job_update(run_id,
                         status="done",
-                        finished_at=datetime.utcnow().isoformat(),
+                        finished_at=datetime.now(timezone.utc).isoformat(),
                         progress="Nessuna fonte attiva (tutte già presenti).",
                         n_added=0,
                         n_total=len(existing_records),
@@ -184,7 +252,7 @@ def _run_pipeline_background(run_id: str, req: RunRequest) -> None:
             sources=active_sources,
             max_results=req.max_results,
             save_raw=req.save_raw,
-            date_from=date_from,
+            date_from=req.date_from,
             date_until=date_until,
             collector_kwargs={"news": {"language": req.news_language}},
             dry_run=req.dry_run,
@@ -207,7 +275,7 @@ def _run_pipeline_background(run_id: str, req: RunRequest) -> None:
 
         _job_update(run_id,
                     status="done",
-                    finished_at=datetime.utcnow().isoformat(),
+                    finished_at=datetime.now(timezone.utc).isoformat(),
                     progress="Completato.",
                     n_added=n_added,
                     n_total=len(final_records),
@@ -218,28 +286,12 @@ def _run_pipeline_background(run_id: str, req: RunRequest) -> None:
         log.exception("Job %s fallito.", run_id)
         _job_update(run_id,
                     status="failed",
-                    finished_at=datetime.utcnow().isoformat(),
+                    finished_at=datetime.now(timezone.utc).isoformat(),
                     progress="Fallito.",
                     error=str(exc))
     finally:
         with _threads_lock:
             _active_threads.pop(run_id, None)
-
-
-# ── Lifecycle ────────────────────────────────────────────────────────────────
-
-@app.on_event("shutdown")
-def shutdown() -> None:
-    """Attende la fine dei job attivi (max 60s) per evitare corruzione dei file JSON."""
-    with _threads_lock:
-        active = list(_active_threads.values())
-    if active:
-        log.warning("Shutdown: %d job in esecuzione — attendo fino a 60s...", len(active))
-        for t in active:
-            t.join(timeout=60)
-            if t.is_alive():
-                log.error("Thread %s non terminato entro il timeout: possibile corruzione dati.", t.name)
-    log.info("Pipeline service shutdown completato.")
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -279,23 +331,13 @@ def create_run(req: RunRequest) -> RunResponse:
             raise HTTPException(status_code=422, detail=f"Sorgenti non valide: {invalid}")
 
     run_id = str(uuid.uuid4())
-    now    = datetime.utcnow().isoformat()
+    now    = datetime.now(timezone.utc).isoformat()
 
-    with _jobs_lock:
-        _jobs[run_id] = {
-            "run_id":      run_id,
-            "status":      "queued",
-            "progress":    "In coda...",
-            "created_at":  now,
-            "started_at":  None,
-            "finished_at": None,
-            "n_added":     None,
-            "n_total":     None,
-            "error":       None,
-            "target":      req.target,
-            "topic":       req.topic,
-            "filename":    None,
-        }
+    with _jobs_db() as conn:
+        conn.execute("""
+            INSERT INTO jobs (run_id, status, progress, created_at, target, topic)
+            VALUES (?, 'queued', 'In coda...', ?, ?, ?)
+        """, (run_id, now, req.target, req.topic))
 
     thread = threading.Thread(
         target=_run_pipeline_background,
@@ -305,7 +347,7 @@ def create_run(req: RunRequest) -> RunResponse:
     )
     with _threads_lock:
         _active_threads[run_id] = thread
-    thread.start()
+        thread.start()
     log.info("Job %s creato per target='%s', topic='%s'.", run_id, req.target, req.topic)
 
     return RunResponse(run_id=run_id, status="queued", created_at=now)
@@ -314,12 +356,18 @@ def create_run(req: RunRequest) -> RunResponse:
 @app.get("/run/{run_id}", response_model=JobStatusResponse, tags=["Jobs"])
 def get_run_status(run_id: str) -> JobStatusResponse:
     """Restituisce lo stato corrente di un job."""
-    job = _job_get(run_id)
-    return JobStatusResponse(**job)
+    return JobStatusResponse(**_job_get(run_id))
 
 
 @app.get("/runs", tags=["Jobs"])
-def list_runs() -> list:
-    """Lista tutti i job in memoria (ultimi N dalla startup del servizio)."""
-    with _jobs_lock:
-        return sorted(_jobs.values(), key=lambda j: j["created_at"], reverse=True)
+def list_runs(
+    limit: int = Query(default=50, ge=1, le=500, description="Numero massimo di job da restituire"),
+    offset: int = Query(default=0, ge=0, description="Offset per la paginazione"),
+) -> list:
+    """Lista job ordinati per data discendente (persistente tra restart). Paginata: limit/offset."""
+    with _jobs_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM jobs ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            (limit, offset),
+        ).fetchall()
+    return [dict(r) for r in rows]
