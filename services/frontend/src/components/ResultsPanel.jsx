@@ -227,10 +227,15 @@ export default function ResultsPanel() {
                     <p className="text-sm font-semibold text-gray-800">
                       {r.target} · <span className="font-normal text-gray-600">{r.topic}</span>
                     </p>
-                    <div className="flex flex-wrap gap-1 mt-1">
+                    <div className="flex flex-wrap gap-1 mt-1 items-center">
                       <Badge color="blue">{r.n_records} record</Badge>
+                      {r.date_range?.from && r.date_range?.to && (
+                        <span className="text-xs text-gray-500">
+                          {r.date_range.from} → {r.date_range.to}
+                        </span>
+                      )}
                       {r.last_run && (
-                        <span className="text-xs text-gray-400">{r.last_run}</span>
+                        <span className="text-xs text-gray-300">· run {r.last_run}</span>
                       )}
                     </div>
                   </div>
@@ -245,6 +250,13 @@ export default function ResultsPanel() {
                        className="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-600">
                       JSON
                     </a>
+                    {r.has_summary && (
+                      <a href={downloadUrl(r.filename, 'summary')} download
+                         onClick={e => e.stopPropagation()}
+                         className="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-600">
+                        Summary
+                      </a>
+                    )}
                   </div>
                 </div>
               </button>

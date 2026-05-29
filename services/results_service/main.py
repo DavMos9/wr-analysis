@@ -91,6 +91,7 @@ def list_results() -> list[dict]:
                 "topic":       summary.get("topic", ""),
                 "n_records":   n_records,
                 "last_run":    summary.get("execution_date", ""),
+                "date_range":  summary.get("date_range"),
                 "sources":     list(summary.get("sources", {}).keys()),
                 "has_csv":     csv_path.exists(),
                 "has_summary": summary_path.exists(),
@@ -138,3 +139,9 @@ def download_json(filename: str) -> FileResponse:
 def download_csv(filename: str) -> FileResponse:
     path = _safe_path(filename, ".csv")
     return FileResponse(path, media_type="text/csv; charset=utf-8", filename=path.name)
+
+
+@app.get("/download/{filename}/summary", tags=["Download"])
+def download_summary(filename: str) -> FileResponse:
+    path = _safe_path(filename, "_summary.json")
+    return FileResponse(path, media_type="application/json", filename=path.name)
