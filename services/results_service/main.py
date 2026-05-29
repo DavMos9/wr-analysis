@@ -103,8 +103,16 @@ def list_results() -> list[dict]:
 
 
 @app.get("/results/{filename}", tags=["Results"])
-def get_result_records(filename: str) -> list:
-    return _load_json(_safe_path(filename, ".json"))
+def get_result_records(filename: str, request: Request) -> JSONResponse:
+    path    = _safe_path(filename, ".json")
+    content = path.read_bytes()
+    etag    = f'"{hashlib.md5(content).hexdigest()}"'
+    if request.headers.get("if-none-match") == etag:
+        return JSONResponse(status_code=304, content=None, headers={"ETag": etag})
+    return JSONResponse(
+        content=json.loads(content),
+        headers={"ETag": etag, "Cache-Control": "no-cache"},
+    )
 
 
 @app.get("/results/{filename}/summary", tags=["Results"])

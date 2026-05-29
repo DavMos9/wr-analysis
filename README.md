@@ -258,6 +258,8 @@ Poll job status.
 
 Status lifecycle: `queued` → `running` → `done` | `failed`
 
+**Caching:** responses include a `Cache-Control` header based on job state — `no-store` for transient states (`queued`, `running`), `max-age=86400` for terminal states (`done`, `failed`). Polling clients should not cache transient responses; terminal responses can be cached indefinitely.
+
 #### `GET /api/pipeline/runs`
 List all jobs ordered by creation date (descending). Persisted in SQLite — survives container restarts.
 
@@ -284,6 +286,8 @@ List all `(target, topic)` datasets available in `data/final/`.
 
 #### `GET /api/results/results/{filename}`
 Return all records for a dataset as a JSON array.
+
+**ETag caching:** the response includes an `ETag` header (MD5 of file content). Clients can send `If-None-Match: "<etag>"` on subsequent requests; the service responds with `304 Not Modified` if the file has not changed, avoiding retransmission of large payloads.
 
 #### `GET /api/results/results/{filename}/summary`
 Return metadata and per-source statistics.
