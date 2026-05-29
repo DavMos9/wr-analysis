@@ -28,7 +28,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -354,9 +354,14 @@ def create_run(req: RunRequest) -> RunResponse:
 
 
 @app.get("/run/{run_id}", response_model=JobStatusResponse, tags=["Jobs"])
-def get_run_status(run_id: str) -> JobStatusResponse:
+def get_run_status(run_id: str, response: Response) -> JobStatusResponse:
     """Restituisce lo stato corrente di un job."""
-    return JobStatusResponse(**_job_get(run_id))
+    job = _job_get(run_id)
+    if job["status"] in ("running", "queued"):
+        response.headers["Cache-Control"] = "no-store"
+    else:
+        response.headers["Cache-Control"] = "max-age=86400"
+    return JobStatusResponse(**job)
 
 
 @app.get("/runs", tags=["Jobs"])

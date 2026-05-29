@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -10,9 +11,9 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 log = logging.getLogger(__name__)
 
@@ -107,8 +108,16 @@ def get_result_records(filename: str) -> list:
 
 
 @app.get("/results/{filename}/summary", tags=["Results"])
-def get_result_summary(filename: str) -> dict:
-    return _load_json(_safe_path(filename, "_summary.json"))
+def get_result_summary(filename: str, request: Request) -> JSONResponse:
+    path = _safe_path(filename, "_summary.json")
+    content = path.read_bytes()
+    etag = f'"{hashlib.md5(content).hexdigest()}"'
+    if request.headers.get("if-none-match") == etag:
+        return JSONResponse(status_code=304, content=None, headers={"ETag": etag})
+    return JSONResponse(
+        content=json.loads(content),
+        headers={"ETag": etag, "Cache-Control": "max-age=3600"},
+    )
 
 
 @app.get("/download/{filename}/json", tags=["Download"])
