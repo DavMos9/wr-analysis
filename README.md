@@ -327,10 +327,12 @@ Create a periodic pipeline run.
 | Field | Type | Description |
 |---|---|---|
 | `frequency` | string | `hourly` \| `daily` \| `weekly` \| `monthly` |
-| `hour` | int 0–23 | Hour of execution (ignored for `hourly`) |
+| `hour` | int 0–23 | Hour of execution in **UTC** (ignored for `hourly`). The UI displays the equivalent local time derived from `next_run`. |
 | `day_of_week` | string | `mon`…`sun` — used only for `weekly` |
 | `day_of_month` | int 1–28 | Day of month — used only for `monthly`. Max 28 avoids skipping February. |
 | `date_window_days` | int | Lookback window — `date_from` is `today - N days` at fire time. Recommended: 7 for weekly, 35 for monthly. |
+
+> **Timezone note:** the scheduler stores and fires cron triggers in UTC (APScheduler default). The frontend converts all times to the browser's local timezone using the `Intl` API — no timezone is hardcoded. To edit an existing schedule, click the ✏️ button; this deletes and recreates the schedule with updated parameters (required by APScheduler to rebuild the trigger).
 
 **Response `201`:**
 ```json
@@ -383,7 +385,7 @@ wr-analysis/
 │   │   │   ├── components/
 │   │   │   │   ├── RunPanel.jsx        # Launch runs, live progress
 │   │   │   │   ├── ResultsPanel.jsx    # Browse results, download
-│   │   │   │   ├── SchedulePanel.jsx   # Create / toggle / delete schedules
+│   │   │   │   ├── SchedulePanel.jsx   # Create / edit / toggle / delete schedules
 │   │   │   │   └── SourceSelector.jsx  # Multi-select data sources
 │   │   │   └── hooks/usePolling.js     # Generic interval-based polling hook
 │   │   ├── package.json

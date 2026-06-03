@@ -302,7 +302,9 @@ export default function SchedulePanel() {
 
               {form.frequency !== 'hourly' && (
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Ora (0-23)</label>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    Ora (0-23) — {new Intl.DateTimeFormat('en', { timeZoneName: 'short', timeZone: 'UTC' }).formatToParts(new Date()).find(p => p.type === 'timeZoneName')?.value ?? 'UTC'}
+                  </label>
                   <input type="number" min={0} max={23} value={form.hour}
                     onChange={e => setField('hour', e.target.value)}
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
