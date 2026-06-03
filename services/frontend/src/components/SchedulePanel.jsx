@@ -38,18 +38,31 @@ function formatNext(isoStr) {
   })
 }
 
+// Converte un'ora UTC (0-23) nell'ora locale equivalente nel browser corrente.
+function utcHourToLocal(utcHour) {
+  const d = new Date()
+  d.setUTCHours(utcHour, 0, 0, 0)
+  return d.getHours()
+}
+
+// Converte un'ora locale (0-23) nell'ora UTC equivalente nel browser corrente.
+function localHourToUTC(localHour) {
+  const d = new Date()
+  d.setHours(localHour, 0, 0, 0)
+  return d.getUTCHours()
+}
+
 // Mostra l'ora di trigger nel fuso locale del browser, ricavandola da next_run.
-// Se next_run non è disponibile, mostra l'ora UTC del server ricavata via Intl API.
 function formatTriggerTime(hour, nextRunIso) {
   if (nextRunIso) {
     return new Date(nextRunIso).toLocaleTimeString('it-IT', {
       hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
     })
   }
-  const serverTz = new Intl.DateTimeFormat('en', { timeZoneName: 'short', timeZone: 'UTC' })
-    .formatToParts(new Date())
-    .find(p => p.type === 'timeZoneName')?.value ?? 'UTC'
-  return `${String(hour ?? 8).padStart(2, '0')}:00 ${serverTz}`
+  // Fallback: converte l'ora UTC in locale
+  const localHour = utcHourToLocal(hour ?? 8)
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+  return `${String(localHour).padStart(2, '0')}:00 (${tz})`
 }
 
 function ScheduleRow({ sched, onToggle, onDelete, onEdit, pendingDelete, onConfirmDelete, onCancelDelete }) {
@@ -173,7 +186,7 @@ export default function SchedulePanel() {
       target:           sched.target,
       topic:            sched.topic,
       frequency:        sched.frequency,
-      hour:             sched.hour ?? 8,
+      hour:             utcHourToLocal(sched.hour ?? 8),
       day_of_week:      sched.day_of_week || 'mon',
       day_of_month:     sched.day_of_month || 1,
       date_window_days: sched.date_window_days,
@@ -197,7 +210,7 @@ export default function SchedulePanel() {
       }
       await createSchedule({
         ...form,
-        hour:             Number(form.hour),
+        hour:             localHourToUTC(Number(form.hour)),
         day_of_month:     Number(form.day_of_month),
         date_window_days: Number(form.date_window_days),
         max_results:      Number(form.max_results),
@@ -303,7 +316,7 @@ export default function SchedulePanel() {
               {form.frequency !== 'hourly' && (
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">
-                    Ora (0-23) — {new Intl.DateTimeFormat('en', { timeZoneName: 'short', timeZone: 'UTC' }).formatToParts(new Date()).find(p => p.type === 'timeZoneName')?.value ?? 'UTC'}
+                    Ora locale (0-23)
                   </label>
                   <input type="number" min={0} max={23} value={form.hour}
                     onChange={e => setField('hour', e.target.value)}
