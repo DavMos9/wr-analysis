@@ -282,7 +282,7 @@ List all available sources with defaults and opt-in sources.
 ### Results Service — `/api/results/`
 
 #### `GET /api/results/results`
-List all `(target, topic)` datasets available in `data/final/`.
+List all `(target, topic)` datasets available in `data/final/`. Each entry includes `date_range` (the actual date span of the articles — `from` / `to` — derived from record dates, not run parameters; updated automatically on each merge).
 
 #### `GET /api/results/results/{filename}`
 Return all records for a dataset as a JSON array.
@@ -290,13 +290,16 @@ Return all records for a dataset as a JSON array.
 **ETag caching:** the response includes an `ETag` header (MD5 of file content). Clients can send `If-None-Match: "<etag>"` on subsequent requests; the service responds with `304 Not Modified` if the file has not changed, avoiding retransmission of large payloads.
 
 #### `GET /api/results/results/{filename}/summary`
-Return metadata and per-source statistics.
+Return metadata and per-source statistics. Includes `ETag` and `Cache-Control: max-age=3600`.
 
 #### `GET /api/results/download/{filename}/json`
 Download the full JSON file.
 
 #### `GET /api/results/download/{filename}/csv`
 Download the CSV file (columns: `source`, `date`, `target`, `topic`, `language`, `sentiment`, `url`, `retrieved_at`).
+
+#### `GET /api/results/download/{filename}/summary`
+Download the summary JSON file.
 
 ---
 
@@ -309,10 +312,11 @@ Create a periodic pipeline run.
 {
   "target":           "Anthropic",
   "topic":            "AI safety",
-  "frequency":        "weekly",
+  "frequency":        "monthly",
   "hour":             8,
   "day_of_week":      "mon",
-  "date_window_days": 7,
+  "day_of_month":     5,
+  "date_window_days": 35,
   "sources":          [],
   "max_results":      20,
   "news_language":    "en",
@@ -320,8 +324,13 @@ Create a periodic pipeline run.
 }
 ```
 
-`frequency` values: `hourly` | `daily` | `weekly` | `monthly`  
-`date_window_days`: lookback window — `date_from` is set to `today - N days` at fire time.
+| Field | Type | Description |
+|---|---|---|
+| `frequency` | string | `hourly` \| `daily` \| `weekly` \| `monthly` |
+| `hour` | int 0–23 | Hour of execution (ignored for `hourly`) |
+| `day_of_week` | string | `mon`…`sun` — used only for `weekly` |
+| `day_of_month` | int 1–28 | Day of month — used only for `monthly`. Max 28 avoids skipping February. |
+| `date_window_days` | int | Lookback window — `date_from` is `today - N days` at fire time. Recommended: 7 for weekly, 35 for monthly. |
 
 **Response `201`:**
 ```json
