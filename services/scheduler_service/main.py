@@ -129,26 +129,27 @@ DayOfWeekType = Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
 def _parse_cron_fields(cron_expr: str) -> dict:
     """
-    Estrae hour e day_of_week dalla cron expression prodotta da _build_cron().
-    Formato atteso: "minute hour dom month dow"
-    Es: "0 8 * * mon" → {"hour": 8, "day_of_week": "mon"}
-        "0 * * * *"   → {"hour": None, "day_of_week": None}
+    Estrae hour, day_of_week e day_of_month dalla cron expression.
+    Formato: "minute hour dom month dow"
     """
     parts = cron_expr.split()
     hour_str = parts[1] if len(parts) > 1 else "*"
+    dom_str  = parts[2] if len(parts) > 2 else "*"
     dow_str  = parts[4] if len(parts) > 4 else "*"
     return {
-        "hour":        int(hour_str) if hour_str != "*" else None,
-        "day_of_week": dow_str       if dow_str  != "*" else None,
+        "hour":         int(hour_str) if hour_str != "*" else None,
+        "day_of_month": int(dom_str)  if dom_str  != "*" else None,
+        "day_of_week":  dow_str       if dow_str  != "*" else None,
     }
 
 
-def _build_cron(frequency: FrequencyType, hour: int, day_of_week: DayOfWeekType) -> str:
+def _build_cron(frequency: FrequencyType, hour: int, day_of_week: DayOfWeekType,
+                day_of_month: int = 1) -> str:
     mapping: dict[str, str] = {
         "hourly":  "0 * * * *",
         "daily":   f"0 {hour} * * *",
         "weekly":  f"0 {hour} * * {day_of_week}",
-        "monthly": f"0 {hour} 1 * *",
+        "monthly": f"0 {hour} {day_of_month} * *",
     }
     return mapping[frequency]
 
@@ -244,6 +245,7 @@ class ScheduleRequest(BaseModel):
     frequency: FrequencyType = Field(..., description="hourly | daily | weekly | monthly")
     hour: int = Field(default=8, ge=0, le=23, description="Ora di esecuzione (0-23)")
     day_of_week: DayOfWeekType = Field(default="mon", description="Giorno per frequency=weekly")
+    day_of_month: int = Field(default=1, ge=1, le=28, description="Giorno del mese per frequency=monthly (1-28)")
     # Finestra temporale
     date_window_days: int = Field(
         default=7, ge=1, le=365,
@@ -271,7 +273,7 @@ def healthz() -> dict:
 def create_schedule(req: ScheduleRequest) -> dict:
     """Crea un nuovo schedule periodico."""
     schedule_id = str(uuid.uuid4())
-    cron        = _build_cron(req.frequency, req.hour, req.day_of_week)
+    cron        = _build_cron(req.frequency, req.hour, req.day_of_week, req.day_of_month)
     now         = datetime.now(timezone.utc).isoformat()
 
     # Configurazione che verrà passata a pipeline-service a ogni fire
