@@ -34,7 +34,22 @@ function formatNext(isoStr) {
   return d.toLocaleString('it-IT', {
     day: '2-digit', month: '2-digit', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
+    timeZoneName: 'short',
   })
+}
+
+// Mostra l'ora di trigger nel fuso locale del browser, ricavandola da next_run.
+// Se next_run non è disponibile, mostra l'ora UTC del server ricavata via Intl API.
+function formatTriggerTime(hour, nextRunIso) {
+  if (nextRunIso) {
+    return new Date(nextRunIso).toLocaleTimeString('it-IT', {
+      hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
+    })
+  }
+  const serverTz = new Intl.DateTimeFormat('en', { timeZoneName: 'short', timeZone: 'UTC' })
+    .formatToParts(new Date())
+    .find(p => p.type === 'timeZoneName')?.value ?? 'UTC'
+  return `${String(hour ?? 8).padStart(2, '0')}:00 ${serverTz}`
 }
 
 function ScheduleRow({ sched, onToggle, onDelete, onEdit, pendingDelete, onConfirmDelete, onCancelDelete }) {
@@ -59,7 +74,7 @@ function ScheduleRow({ sched, onToggle, onDelete, onEdit, pendingDelete, onConfi
               <span>giorno {sched.day_of_month}</span>
             )}
             {sched.frequency !== 'hourly' && (
-              <span>ore {sched.hour ?? 8}:00</span>
+              <span>ore {formatTriggerTime(sched.hour, sched.next_run)}</span>
             )}
             <span>finestra: {sched.date_window_days}g</span>
           </div>
