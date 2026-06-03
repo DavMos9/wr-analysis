@@ -327,12 +327,12 @@ Create a periodic pipeline run.
 | Field | Type | Description |
 |---|---|---|
 | `frequency` | string | `hourly` \| `daily` \| `weekly` \| `monthly` |
-| `hour` | int 0–23 | Hour of execution in **UTC** (ignored for `hourly`). The UI displays the equivalent local time derived from `next_run`. |
+| `hour` | int 0–23 | Hour of execution in **UTC** (ignored for `hourly`). The UI accepts and displays local time — conversion to/from UTC is handled automatically by the frontend. |
 | `day_of_week` | string | `mon`…`sun` — used only for `weekly` |
 | `day_of_month` | int 1–28 | Day of month — used only for `monthly`. Max 28 avoids skipping February. |
 | `date_window_days` | int | Lookback window — `date_from` is `today - N days` at fire time. Recommended: 7 for weekly, 35 for monthly. |
 
-> **Timezone note:** the scheduler stores and fires cron triggers in UTC (APScheduler default). The frontend converts all times to the browser's local timezone using the `Intl` API — no timezone is hardcoded. To edit an existing schedule, click the ✏️ button; this deletes and recreates the schedule with updated parameters (required by APScheduler to rebuild the trigger).
+> **Timezone note:** the scheduler stores and fires cron triggers in UTC (APScheduler default). The UI works entirely in the browser's local timezone: the hour field accepts local time and the frontend converts it to UTC before saving; when loading an existing schedule for editing, the stored UTC hour is converted back to local time. All displayed times (`next_run`, `last_run`, trigger hour) are shown in the browser's local timezone via the `Intl` API — no timezone is hardcoded. If the user changes location, times are displayed in the new local timezone automatically. Note: since the cron trigger stores a fixed UTC hour, the job fires at the same absolute UTC instant regardless of the user's current timezone. To edit an existing schedule, click ✏️ — this deletes and recreates the schedule (required by APScheduler to rebuild the trigger).
 
 **Response `201`:**
 ```json
