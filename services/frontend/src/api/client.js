@@ -60,6 +60,9 @@ export const getResultSummary = (filename) =>
 export const downloadUrl = (filename, format) =>
   `${BASE.results}/download/${filename}/${format}`
 
+export const deleteResult = (filename) =>
+  _fetch(`${BASE.results}/results/${filename}`, { method: 'DELETE' })
+
 // ── Scheduler Service ─────────────────────────────────────────────────────────
 
 export const listSchedules = () =>

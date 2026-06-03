@@ -103,6 +103,24 @@ def list_results() -> list[dict]:
     return sorted(output, key=lambda x: x.get("last_run", ""), reverse=True)
 
 
+@app.delete("/results/{filename}", status_code=204, tags=["Results"])
+def delete_result(filename: str) -> None:
+    if not _FILENAME_RE.fullmatch(filename):
+        raise HTTPException(status_code=400, detail="Nome file non valido.")
+    deleted = 0
+    for suffix in (".json", "_summary.json", ".csv"):
+        wanted = filename + suffix
+        if FINAL_DIR.exists():
+            for candidate in FINAL_DIR.iterdir():
+                if candidate.name == wanted:
+                    candidate.unlink()
+                    deleted += 1
+                    break
+    if deleted == 0:
+        raise HTTPException(status_code=404, detail=f"Analisi non trovata: {filename}")
+    log.info("Eliminata analisi: %s (%d file)", filename, deleted)
+
+
 @app.get("/results/{filename}", tags=["Results"])
 def get_result_records(filename: str, request: Request) -> JSONResponse:
     path    = _safe_path(filename, ".json")

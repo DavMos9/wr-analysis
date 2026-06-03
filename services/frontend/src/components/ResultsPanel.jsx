@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { listResults, getResultRecords, getResultSummary, downloadUrl } from '../api/client'
+import { listResults, getResultRecords, getResultSummary, downloadUrl, deleteResult } from '../api/client'
 
 function Badge({ children, color = 'gray' }) {
   const colors = {
@@ -170,10 +170,12 @@ function ResultDetail({ filename, onClose }) {
 }
 
 export default function ResultsPanel() {
-  const [results, setResults]     = useState([])
-  const [loading, setLoading]     = useState(true)
-  const [loadError, setLoadError] = useState('')
-  const [selected, setSelected]   = useState(null)
+  const [results, setResults]         = useState([])
+  const [loading, setLoading]         = useState(true)
+  const [loadError, setLoadError]     = useState('')
+  const [selected, setSelected]       = useState(null)
+  const [pendingDelete, setPendingDelete] = useState(null)
+  const [deleteError, setDeleteError] = useState('')
 
   const reload = () => {
     setLoading(true)
@@ -182,6 +184,20 @@ export default function ResultsPanel() {
       .then(setResults)
       .catch(err => setLoadError(err.message || 'Impossibile caricare i risultati.'))
       .finally(() => setLoading(false))
+  }
+
+  const handleDelete = (filename) => setPendingDelete(filename)
+
+  const handleConfirmDelete = async (filename) => {
+    setPendingDelete(null)
+    setDeleteError('')
+    try {
+      await deleteResult(filename)
+      if (selected === filename) setSelected(null)
+      reload()
+    } catch (err) {
+      setDeleteError(`Impossibile eliminare: ${err.message}`)
+    }
   }
 
   useEffect(reload, [])
@@ -239,7 +255,7 @@ export default function ResultsPanel() {
                       )}
                     </div>
                   </div>
-                  <div className="flex gap-1 shrink-0">
+                  <div className="flex gap-1 shrink-0 items-center">
                     <a href={downloadUrl(r.filename, 'csv')} download
                        onClick={e => e.stopPropagation()}
                        className="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-600">
@@ -257,11 +273,36 @@ export default function ResultsPanel() {
                         Summary
                       </a>
                     )}
+                    {pendingDelete === r.filename ? (
+                      <div className="flex items-center gap-1 text-xs" onClick={e => e.stopPropagation()}>
+                        <span className="text-gray-500">Eliminare?</span>
+                        <button type="button"
+                          onClick={() => handleConfirmDelete(r.filename)}
+                          className="px-2 py-1 rounded bg-red-500 text-white hover:bg-red-600 font-medium">
+                          Sì
+                        </button>
+                        <button type="button"
+                          onClick={() => setPendingDelete(null)}
+                          className="px-2 py-1 rounded bg-gray-100 text-gray-600 hover:bg-gray-200">
+                          No
+                        </button>
+                      </div>
+                    ) : (
+                      <button type="button"
+                        onClick={e => { e.stopPropagation(); handleDelete(r.filename) }}
+                        title="Elimina analisi"
+                        className="text-gray-300 hover:text-red-500 transition-colors text-sm ml-1">
+                        🗑
+                      </button>
+                    )}
                   </div>
                 </div>
               </button>
             ))}
           </div>
+        )}
+        {deleteError && (
+          <p className="text-sm text-red-600 bg-red-50 px-4 py-2">{deleteError}</p>
         )}
       </div>
 
