@@ -37,7 +37,7 @@ function formatNext(isoStr) {
   })
 }
 
-function ScheduleRow({ sched, onToggle, onDelete, pendingDelete, onConfirmDelete, onCancelDelete }) {
+function ScheduleRow({ sched, onToggle, onDelete, onEdit, pendingDelete, onConfirmDelete, onCancelDelete }) {
   const enabled = !!sched.enabled
 
   return (
@@ -103,6 +103,13 @@ function ScheduleRow({ sched, onToggle, onDelete, pendingDelete, onConfirmDelete
                   ${enabled ? 'left-5' : 'left-0.5'}`} />
               </button>
               <button
+                onClick={() => onEdit(sched)}
+                title="Modifica"
+                className="text-gray-300 hover:text-blue-500 transition-colors text-sm"
+              >
+                ✏️
+              </button>
+              <button
                 onClick={() => onDelete(sched.id)}
                 title="Elimina"
                 className="text-gray-300 hover:text-red-500 transition-colors text-sm"
@@ -122,10 +129,11 @@ export default function SchedulePanel() {
   const [loading, setLoading]       = useState(true)
   const [loadError, setLoadError]   = useState('')
   const [showForm, setShowForm]     = useState(false)
+  const [editingId, setEditingId]   = useState(null)   // id schedule in modifica, null = creazione
   const [submitting, setSubmitting] = useState(false)
   const [error, setError]           = useState('')
   const [actionError, setActionError] = useState('')
-  const [pendingDelete, setPendingDelete] = useState(null)  // id schedule in attesa conferma
+  const [pendingDelete, setPendingDelete] = useState(null)
 
   const [form, setForm] = useState(FORM_DEFAULTS)
 
@@ -142,18 +150,45 @@ export default function SchedulePanel() {
 
   useEffect(reload, [])
 
-  const handleCreate = async (e) => {
+  const handleEdit = (sched) => {
+    const config = typeof sched.pipeline_config === 'string'
+      ? JSON.parse(sched.pipeline_config)
+      : (sched.pipeline_config || {})
+    setForm({
+      target:           sched.target,
+      topic:            sched.topic,
+      frequency:        sched.frequency,
+      hour:             sched.hour ?? 8,
+      day_of_week:      sched.day_of_week || 'mon',
+      day_of_month:     sched.day_of_month || 1,
+      date_window_days: sched.date_window_days,
+      sources:          config.sources || [],
+      max_results:      config.max_results ?? 20,
+      news_language:    config.news_language || 'en',
+      save_raw:         config.save_raw ?? true,
+    })
+    setEditingId(sched.id)
+    setError('')
+    setShowForm(true)
+  }
+
+  const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
     setSubmitting(true)
     try {
+      if (editingId) {
+        await deleteSchedule(editingId)
+      }
       await createSchedule({
         ...form,
         hour:             Number(form.hour),
+        day_of_month:     Number(form.day_of_month),
         date_window_days: Number(form.date_window_days),
         max_results:      Number(form.max_results),
       })
       setForm(FORM_DEFAULTS)
+      setEditingId(null)
       setShowForm(false)
       reload()
     } catch (err) {
@@ -161,6 +196,13 @@ export default function SchedulePanel() {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const handleCancelForm = () => {
+    setShowForm(false)
+    setEditingId(null)
+    setForm(FORM_DEFAULTS)
+    setError('')
   }
 
   const handleToggle = async (id, enabled) => {
@@ -199,7 +241,7 @@ export default function SchedulePanel() {
             ↻ Aggiorna
           </button>
           <button
-            onClick={() => { setShowForm(s => !s); setError('') }}
+            onClick={() => { if (showForm) handleCancelForm(); else setShowForm(true) }}
             className="text-sm px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
           >
             {showForm ? '✕ Annulla' : '+ Nuovo schedule'}
@@ -210,8 +252,10 @@ export default function SchedulePanel() {
       {/* Form creazione */}
       {showForm && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="font-semibold text-gray-900 mb-5">Crea schedule</h3>
-          <form onSubmit={handleCreate} className="space-y-5">
+          <h3 className="font-semibold text-gray-900 mb-5">
+            {editingId ? 'Modifica schedule' : 'Crea schedule'}
+          </h3>
+          <form onSubmit={handleSubmit} className="space-y-5">
 
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -304,9 +348,9 @@ export default function SchedulePanel() {
               <button type="submit" disabled={submitting}
                 className="flex-1 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-semibold
                            hover:bg-blue-700 disabled:opacity-50 transition-colors">
-                {submitting ? 'Creazione...' : 'Crea schedule'}
+                {submitting ? 'Salvataggio...' : editingId ? 'Salva modifiche' : 'Crea schedule'}
               </button>
-              <button type="button" onClick={() => setShowForm(false)}
+              <button type="button" onClick={handleCancelForm}
                 className="px-4 py-2.5 rounded-lg border border-gray-300 text-sm text-gray-600
                            hover:bg-gray-50 transition-colors">
                 Annulla
@@ -339,6 +383,7 @@ export default function SchedulePanel() {
               key={s.id}
               sched={s}
               onToggle={handleToggle}
+              onEdit={handleEdit}
               onDelete={handleDelete}
               pendingDelete={pendingDelete}
               onConfirmDelete={handleConfirmDelete}
