@@ -48,11 +48,11 @@ export default function SourceSelector({ selected, onChange }) {
   return (
     <div className="space-y-3">
       <div className="flex gap-2 text-xs">
-        <button onClick={selectAll}     className="text-blue-600 hover:underline">Tutte</button>
+        <button type="button" onClick={selectAll}     className="text-blue-600 hover:underline">Tutte</button>
         <span className="text-gray-300">|</span>
-        <button onClick={selectDefault} className="text-blue-600 hover:underline">Default</button>
+        <button type="button" onClick={selectDefault} className="text-blue-600 hover:underline">Default</button>
         <span className="text-gray-300">|</span>
-        <button onClick={selectNone}    className="text-blue-600 hover:underline">Nessuna</button>
+        <button type="button" onClick={selectNone}    className="text-blue-600 hover:underline">Nessuna</button>
         <span className="ml-auto text-gray-400">{selected.length} / {allSources.length} selezionate</span>
       </div>
 
