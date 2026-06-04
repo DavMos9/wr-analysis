@@ -27,7 +27,7 @@ services:
     build:
       context: ./services/results_service
     volumes:
-      - pipeline_data:/app/data:ro   # read-only: non scrive mai dati
+      - pipeline_data:/app/data
     networks: [backend]
     restart: unless-stopped
     healthcheck:
