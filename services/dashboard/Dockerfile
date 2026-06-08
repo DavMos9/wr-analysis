@@ -7,13 +7,12 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Dipendenze Python installate a build time — il codice è montato a runtime.
+# Dipendenze Python — copiate prima del codice per sfruttare il cache layer Docker.
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Il codice app (Grafici/wr_analysis) viene montato come volume in /app
-# tramite bind-mount in docker-compose — non copiato nell'immagine.
-# Questo permette di aggiornare i sorgenti senza ricostruire l'immagine.
+# Codice sorgente del dashboard.
+COPY app.py charts.py config.py db.py .
 
 EXPOSE 8501
 

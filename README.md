@@ -393,8 +393,12 @@ wr-analysis/
 │   │   └── Dockerfile
 │   │
 │   └── dashboard/
+│       ├── app.py              # Streamlit entry point
+│       ├── charts.py           # Chart definitions (Plotly)
+│       ├── config.py           # DB connection config
+│       ├── db.py               # PostgreSQL query layer
 │       ├── requirements.txt    # Streamlit + psycopg2 + plotly
-│       └── Dockerfile          # Mounts ../Grafici/wr_analysis as /app
+│       └── Dockerfile
 │
 └── data/                       # Created at runtime (gitignored)
     ├── final/                  # .json / .csv / _summary.json per (target, topic)
@@ -480,10 +484,12 @@ docker compose exec scheduler-service python3 -c \
 
 ## Dependencies
 
-The core pipeline (`wr-analysis-light`) is mounted as a **read-only bind-mount** — no file is copied into the Docker image. This means:
+The core pipeline (`wr-analysis-light`) is mounted as a **read-only bind-mount** into `pipeline-service` — no pipeline code is copied into the Docker image. This means:
 
 - Changes to pipeline code are picked up without rebuilding the image
 - The `wr-analysis-light` directory must be present on the host before `docker compose up`
+
+The dashboard code (`app.py`, `charts.py`, `config.py`, `db.py`) lives inside `services/dashboard/` in this repository and is copied into the image at build time — no external directory is required.
 
 ---
 

@@ -71,10 +71,6 @@ services:
   dashboard:
     build:
       context: ./services/dashboard
-    volumes:
-      # Codice sorgente montato in sola lettura — nessuna copia nell'immagine.
-      # Aggiustare il path relativo se la cartella Grafici viene spostata.
-      - ../Grafici/wr_analysis:/app:ro
     env_file: .env
     networks: [backend]
     restart: unless-stopped
